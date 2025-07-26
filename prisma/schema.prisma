@@ -1,0 +1,322 @@
+// prisma/schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  admin
+  staff
+  tenant //người thuê nhà
+}
+
+enum RoomType {
+  single
+  double
+  shared
+}
+
+enum RoomStatus {
+  available
+  occupied
+  maintenance
+  reserved
+}
+
+enum TenantStatus {
+  active
+  inactive
+}
+
+enum ContractStatus {
+  active
+  expired
+  terminated
+}
+
+enum PaymentStatus {
+  unpaid
+  partial
+  paid
+  overdue
+}
+
+enum PaymentMethod {
+  cash
+  transfer
+  card
+}
+
+enum Priority {
+  low
+  medium
+  high
+  urgent
+}
+
+enum MaintenanceStatus {
+  pending
+  in_progress
+  completed
+  cancelled
+}
+
+enum NotificationType {
+  info
+  warning
+  error
+  success
+}
+
+enum NotificationTarget {
+  all
+  room
+  tenant
+}
+
+model User {
+  id           String   @id @default(uuid()) 
+  username     String   @unique @db.VarChar(50)
+  email        String   @unique @db.VarChar(100)
+  passwordHash String   @map("password_hash") @db.VarChar(255)
+  fullName     String   @map("full_name") @db.VarChar(100)
+  phone        String?  @db.VarChar(15)
+  role         UserRole @default(tenant)
+  isActive     Boolean  @default(true) @map("is_active")
+  
+  // Thông tin thêm cho tenant
+  tenantId     String?  @unique @map("tenant_id")  // Link tới tenant record
+  
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  tenant                Tenant?              @relation(fields: [tenantId], references: [id])
+  createdContracts      Contract[]           @relation("ContractCreatedBy")
+  createdInvoices       Invoice[]            @relation("InvoiceCreatedBy")
+  recordedReadings      UtilityReading[]     @relation("ReadingRecordedBy")
+  receivedPayments      Payment[]            @relation("PaymentReceivedBy")
+  reportedMaintenance   MaintenanceRequest[] @relation("MaintenanceReportedBy")
+  sentNotifications     Notification[]       @relation("NotificationSentBy")
+  activityLogs          ActivityLog[]
+
+  @@map("users")
+}
+
+model Floor {
+  id          String   @id @default(uuid()) 
+  name        String   @db.VarChar(50)
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  // Relations
+  rooms Room[]
+
+  @@map("floors")
+}
+
+model Room {
+  id            String     @id @default(uuid()) 
+  roomNumber    String     @unique @map("room_number") @db.VarChar(20)
+  floorId       String?    @map("floor_id") 
+  roomType      RoomType   @default(single) @map("room_type")
+  area          Decimal?   @db.Decimal(5, 2)
+  basePrice     Decimal    @map("base_price") @db.Decimal(10, 2)
+  depositAmount Decimal?   @map("deposit_amount") @db.Decimal(10, 2)
+  maxOccupants  Int        @default(1) @map("max_occupants")
+  status        RoomStatus @default(available)
+  description   String?
+  amenities     Json?      // ["wifi", "ac", "fridge", "parking"]
+  images        Json?      // ["url1", "url2"]
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @updatedAt @map("updated_at")
+
+  // Relations
+  floor               Floor?               @relation(fields: [floorId], references: [id])
+  contracts           Contract[]
+  utilityReadings     UtilityReading[]
+  maintenanceRequests MaintenanceRequest[]
+
+  @@map("rooms")
+}
+
+model Tenant {
+  id                      String        @id @default(uuid()) 
+  idCard                  String        @unique @map("id_card") @db.VarChar(20)
+  dateOfBirth             DateTime?     @map("date_of_birth") @db.Date
+  hometown                String?       @db.VarChar(100)
+  job                     String?       @db.VarChar(100)
+  emergencyContactName    String?       @map("emergency_contact_name") @db.VarChar(100)
+  emergencyContactPhone   String?       @map("emergency_contact_phone") @db.VarChar(15)
+  idCardFrontImage        String?       @map("id_card_front_image") @db.VarChar(255)
+  idCardBackImage         String?       @map("id_card_back_image") @db.VarChar(255)
+  avatar                  String?       @db.VarChar(255)
+  status                  TenantStatus  @default(active)
+  createdAt               DateTime      @default(now()) @map("created_at")
+  updatedAt               DateTime      @updatedAt @map("updated_at")
+
+  // Relations
+  user      User?       @relation // One-to-one với User
+  contracts Contract[]
+
+  @@map("tenants")
+}
+
+model Contract {
+  id              String         @id @default(uuid()) 
+  contractNumber  String         @unique @map("contract_number") @db.VarChar(50)
+  roomId          String         @map("room_id") 
+  tenantId        String         @map("tenant_id") 
+  startDate       DateTime       @map("start_date") @db.Date
+  endDate         DateTime?      @map("end_date") @db.Date
+  monthlyRent     Decimal        @map("monthly_rent") @db.Decimal(10, 2)
+  depositAmount   Decimal        @map("deposit_amount") @db.Decimal(10, 2)
+  electricityPrice Decimal?      @map("electricity_price") @db.Decimal(8, 2)
+  waterPrice      Decimal?       @map("water_price") @db.Decimal(8, 2)
+  internetFee     Decimal?       @map("internet_fee") @db.Decimal(8, 2)
+  parkingFee      Decimal?       @map("parking_fee") @db.Decimal(8, 2)
+  otherFees       Json?          @map("other_fees") // {"cleaning": 50000, "security": 30000}
+  contractTerms   String?        @map("contract_terms")
+  status          ContractStatus @default(active)
+  createdBy       String         @map("created_by") 
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
+
+  // Relations
+  room      Room    @relation(fields: [roomId], references: [id])
+  tenant    Tenant  @relation(fields: [tenantId], references: [id])
+  createdByUser User @relation("ContractCreatedBy", fields: [createdBy], references: [id])
+  invoices  Invoice[]
+
+  @@map("contracts")
+}
+
+model Invoice {
+  id               String        @id @default(uuid()) 
+  invoiceNumber    String        @unique @map("invoice_number") @db.VarChar(50)
+  contractId       String        @map("contract_id") 
+  billingMonth     DateTime      @map("billing_month") @db.Date
+  roomRent         Decimal       @map("room_rent") @db.Decimal(10, 2)
+  internetFee      Decimal       @default(0) @map("internet_fee") @db.Decimal(8, 2)
+  parkingFee       Decimal       @default(0) @map("parking_fee") @db.Decimal(8, 2)
+  electricityUsage Decimal?      @default(0) @map("electricity_usage") @db.Decimal(8, 2)
+  electricityAmount Decimal?     @default(0) @map("electricity_amount") @db.Decimal(10, 2)
+  waterUsage       Decimal?      @default(0) @map("water_usage") @db.Decimal(8, 2)
+  waterAmount      Decimal?      @default(0) @map("water_amount") @db.Decimal(10, 2)
+  otherFees        Json?         @map("other_fees") // {"cleaning": 50000, "penalty": 100000}
+  totalAmount      Decimal       @map("total_amount") @db.Decimal(10, 2)
+  paidAmount       Decimal       @default(0) @map("paid_amount") @db.Decimal(10, 2)
+  paymentStatus    PaymentStatus @default(unpaid) @map("payment_status")
+  dueDate          DateTime      @map("due_date") @db.Date
+  paidDate         DateTime?     @map("paid_date")
+  paymentMethod    PaymentMethod? @map("payment_method")
+  notes            String?
+  createdBy        String        @map("created_by") 
+  createdAt        DateTime      @default(now()) @map("created_at")
+  updatedAt        DateTime      @updatedAt @map("updated_at")
+
+  // Relations
+  contract     Contract @relation(fields: [contractId], references: [id])
+  createdByUser User    @relation("InvoiceCreatedBy", fields: [createdBy], references: [id])
+  payments     Payment[]
+
+  @@map("invoices")
+}
+
+model UtilityReading {
+  id                 String   @id @default(uuid()) 
+  roomId             String   @map("room_id") 
+  readingDate        DateTime @map("reading_date") @db.Date
+  electricityReading Decimal? @map("electricity_reading") @db.Decimal(8, 2)
+  waterReading       Decimal? @map("water_reading") @db.Decimal(8, 2)
+  electricityUsage   Decimal? @map("electricity_usage") @db.Decimal(8, 2)
+  waterUsage         Decimal? @map("water_usage") @db.Decimal(8, 2)
+  notes              String?
+  recordedBy         String   @map("recorded_by") 
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  // Relations
+  room         Room @relation(fields: [roomId], references: [id])
+  recordedByUser User @relation("ReadingRecordedBy", fields: [recordedBy], references: [id])
+
+  @@map("utility_readings")
+}
+
+model Payment {
+  id              String        @id @default(uuid()) 
+  invoiceId       String        @map("invoice_id") 
+  amount          Decimal       @db.Decimal(10, 2)
+  paymentMethod   PaymentMethod @map("payment_method")
+  paymentDate     DateTime      @default(now()) @map("payment_date")
+  referenceNumber String?       @map("reference_number") @db.VarChar(100)
+  notes           String?
+  receivedBy      String        @map("received_by") 
+  createdAt       DateTime      @default(now()) @map("created_at")
+
+  // Relations
+  invoice        Invoice @relation(fields: [invoiceId], references: [id])
+  receivedByUser User    @relation("PaymentReceivedBy", fields: [receivedBy], references: [id])
+
+  @@map("payments")
+}
+
+model MaintenanceRequest {
+  id            String            @id @default(uuid()) 
+  roomId        String            @map("room_id") 
+  title         String            @db.VarChar(200)
+  description   String?
+  priority      Priority          @default(medium)
+  status        MaintenanceStatus @default(pending)
+  cost          Decimal           @default(0) @db.Decimal(10, 2)
+  assignedTo    String?           @map("assigned_to") @db.VarChar(100)
+  reportedBy    String            @map("reported_by") 
+  completedDate DateTime?         @map("completed_date")
+  images        Json?             // ["image1.jpg", "image2.jpg"]
+  createdAt     DateTime          @default(now()) @map("created_at")
+  updatedAt     DateTime          @updatedAt @map("updated_at")
+
+  // Relations
+  room           Room @relation(fields: [roomId], references: [id])
+  reportedByUser User @relation("MaintenanceReportedBy", fields: [reportedBy], references: [id])
+
+  @@map("maintenance_requests")
+}
+
+model Notification {
+  id         String             @id @default(uuid()) 
+  title      String             @db.VarChar(200)
+  message    String
+  type       NotificationType   @default(info)
+  targetType NotificationTarget @map("target_type")
+  targetId   String?            @map("target_id") 
+  isRead     Boolean            @default(false) @map("is_read")
+  sentBy     String             @map("sent_by") 
+  createdAt  DateTime           @default(now()) @map("created_at")
+
+  // Relations
+  sentByUser User @relation("NotificationSentBy", fields: [sentBy], references: [id])
+
+  @@map("notifications")
+}
+
+model ActivityLog {
+  id          String   @id @default(uuid()) 
+  userId      String   @map("user_id") 
+  action      String   @db.VarChar(100)
+  entityType  String   @map("entity_type") @db.VarChar(50)
+  entityId    String   @map("entity_id") 
+  oldValues   Json?    @map("old_values")
+  newValues   Json?    @map("new_values")
+  description String?
+  ipAddress   String?  @map("ip_address") @db.VarChar(45)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  // Relations
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("activity_logs")
+}
