@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, UseGuards, ValidationPipe } from '@nestjs/common';
+import { Controller, Post, Get, Body, UseGuards, ValidationPipe, Param } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
@@ -22,7 +22,7 @@ export class AuthController {
     return this.authService.login(loginDto);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard) // Bảo vệ route - phải có JWT token hợp lệ
   @Get('profile')
   async getProfile(@CurrentUser() user: any) {
     return {
@@ -32,7 +32,7 @@ export class AuthController {
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.admin)
+  @Roles(UserRole.admin) // Chỉ user có role 'admin' mới truy cập được
   @Get('admin-only')
   async adminOnly(@CurrentUser() user: any) {
     return {
@@ -46,5 +46,12 @@ export class AuthController {
     return {
       message: 'Đăng xuất thành công',
     };
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.admin) // Chỉ user có role 'admin' mới truy cập được
+  @Get('alluser')
+  async getAllUsers(@CurrentUser() user: any) {
+    return this.authService.getAllUsers();
   }
 }

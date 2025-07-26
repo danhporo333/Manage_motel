@@ -115,4 +115,28 @@ export class AuthService {
 
     return user;
   }
+
+  async getAllUsers() {
+    const users = await this.prisma.user.findMany({
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        fullName: true,
+        role: true,
+        isActive: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+      orderBy: {
+        createdAt: 'desc', // Sắp xếp theo thời gian tạo mới nhất
+      },
+    });
+
+    return {
+      message: 'Lấy danh sách tài khoản thành công',
+      total: users.length,
+      users: users,
+    };
+  }
 }
